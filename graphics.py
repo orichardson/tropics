@@ -65,7 +65,6 @@ def multiedge_path(G, pos):
 		verts.append(pu)
 		verts.append(bend(pu,pv, bend_idx, counts[u,v]))
 		verts.append(pv)
-	
 	return Path(verts, codes)
 	
 def fig_setup(G, ax=None, offset=None):
@@ -96,16 +95,18 @@ def paint_multi(G, ax=None, offset=None, **kwargs):
 	nx.draw_networkx_nodes(G,pos,ax=ax,**kwargs)
 
 
-def divisor_view(G, painter, div=None, index='', **kwargs):
+def divisor_view(G, div=None, painter=paint_multi, index='', **kwargs):
 	if div is None:
 		div = np.array([ n % 4 for n in G.nodes() ])
+	if not 'node_color' in kwargs:
+		kwargs['node_color'] = 'b'
 		
 	labels = {x:  (str(div[x]) if div[x] != 0 else '') for x in G.nodes()}
 	
 	pos,ax,cf = fig_setup(G)
 	cf.canvas.set_window_title('Graph Divisor View '+str(index))
 	ax.add_patch(patches.PathPatch(multiedge_path(G,pos), ec='0.8', fc='none', lw=3))
-	nx.draw_networkx_nodes(G, pos, node_size=800*div + 100, **kwargs)
+	nx.draw_networkx_nodes(G, pos, node_size=800*np.abs(div) + 100, **kwargs)
 	
 	ftcolor = 'k' if sum(colorConverter.to_rgb(kwargs['node_color'])) > 1.5 else 'w'
 	nx.draw_networkx_labels(G, pos, labels=labels, font_weight='bold', font_family='serif', font_color=ftcolor, font_size=20)		
@@ -194,7 +195,7 @@ def paintAll(ingraphs, spacing=1.4, painter=paint_multi):
 		idx = x+M*y
 		if x >= 0 and x < M and y >= 0 and y < N and idx < len(Gs):
 			plt.figure()
-			divisor_view(Gs[idx], painter=painter, index=idx, node_color=colors[idx])
+			divisor_view(Gs[idx], index=idx, painter=painter, node_color=colors[idx])
 	
 	fig.canvas.mpl_connect('scroll_event', scroll)
 	fig.canvas.mpl_connect('button_press_event', pressed)

@@ -6,7 +6,6 @@ Created on Fri Oct  7 07:39:47 2016
 """
 import networkx as nx
 import numpy as np
-import matplotlib.pyplot as plt
 
 from networkx import isomorphism
 
