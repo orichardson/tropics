@@ -19,7 +19,7 @@ def is_q_reduced(D, q, G):
 	if any( d < 0 for d in D if d != q ):
 		return False
 		
-	Ai = set(G.nodes)
+	Ai = set(G.nodes())
 	vi = q
 	
 	def outdeg(A, v):
