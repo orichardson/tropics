@@ -12,8 +12,9 @@ import matplotlib.patches as patches
 import networkx as nx
 import numpy as np
 import time
-
 import math, random
+
+import divisors
 
 _STYLE = [(2,'solid'), (4,'dashed'), (8,'dotted')]
 _BENDS = [0,1,-1,0.5,-0.5]
@@ -39,6 +40,7 @@ def paintG(G,ax=None, offset=None, **kwargs):
 	
 	weights, styles = zip(*[_STYLE[len(G[u][v])-1] for u,v in edges])	
 	nx.draw(G2, pos=pos, edges=edges, width=weights, ax=ax, style=styles, **kwargs)
+	
 	
 	if ax is None:
 		plt.show()
@@ -93,29 +95,86 @@ def paint_multi(G, ax=None, offset=None, **kwargs):
 	ax.add_patch(patches.PathPatch(multiedge_path(G,pos), ec='gray', fc='none', lw=2))
 	#ax.add_patch(patches.PathPatch(Path(verts,[1,2,2]*len(G.edges())), ec='black', lw=1))
 	nx.draw_networkx_nodes(G,pos,ax=ax,**kwargs)
+	
+	for (v, xy) in pos.items():
+		ax.annotate("$v_%d$"%v, xy, ha="center", va="center")	
 
 
 def divisor_view(G, div=None, painter=paint_multi, index='', **kwargs):
 	if div is None:
 		div = np.array([ n % 4 for n in G.nodes() ])
-	if not 'node_color' in kwargs:
-		kwargs['node_color'] = 'b'
+	if not 'c' in kwargs:
+		kwargs['c'] = 'b'
 		
-	labels = {x:  (str(div[x]) if div[x] != 0 else '') for x in G.nodes()}
+	def labeldata(d):
+		labels = {x:  (str(d[x]) if d[x] != 0 else '') for x in G.nodes()}
+		nodesizes = 800*np.abs(d) + 100
+		return labels, nodesizes
+
+	localdiv = div # or np.array(div) # if we don't want modification
+	labels, nodesizes	 = labeldata(localdiv)
 	
-	pos,ax,cf = fig_setup(G)
+	pos,ax,cf = fig_setup(G, kwargs.pop('ax')) if 'ax' in kwargs else fig_setup(G)
+		
 	cf.canvas.set_window_title('Graph Divisor View '+str(index))
 	ax.add_patch(patches.PathPatch(multiedge_path(G,pos), ec='0.8', fc='none', lw=3))
-	nx.draw_networkx_nodes(G, pos, node_size=800*np.abs(div) + 100, **kwargs)
 	
-	ftcolor = 'k' if sum(colorConverter.to_rgb(kwargs['node_color'])) > 1.5 else 'w'
-	nx.draw_networkx_labels(G, pos, labels=labels, font_weight='bold', font_family='serif', font_color=ftcolor, font_size=20)		
+	xy=np.asarray([pos[v] for v in G.nodes()])
+	nodespatch = ax.scatter(xy[:,0], xy[:,1], s = nodesizes, picker=True, **kwargs)
+	nodespatch.set_zorder(2)
+	#nx.draw_networkx_nodes(G, pos, node_size=nodesizes, picker=True, **kwargs)
+	
+	ftcolor = 'k' if sum(colorConverter.to_rgb(kwargs['c'])) > 1.5 else 'w'
+	labelpatch = nx.draw_networkx_labels(G, pos, labels=labels, font_family='serif', font_color=ftcolor, font_size=20)
+
+	for (v, xy) in pos.items():
+		ax.annotate("$v_%d$"%v, xy, ha="center", va="center")
+		
+	modes = ['firing', 'adding']
+	
+	def onpick(event):
+		ind = event.ind
+		
+		way = {1: 1, 3:-1}[event.mouseevent.button]
+		divisors.fire(localdiv, {i:way for i in ind}, G)
+
+		labs, nodsiz	 = labeldata(localdiv)
+		nodespatch.set_sizes(nodsiz)
+		
+		for v, l in labs.items():
+			labelpatch[v].set_text(l)
+
+		plt.draw()
+		
+	
+	cf.canvas.mpl_connect('pick_event', onpick)
+	#return nodespatch,labelpatch
+	
 
 def get_dims(L):
 	M = min(5,math.ceil(L/math.sqrt(L)))
 	N = math.ceil(L/M)
 	return N,M
+	
+def display_complete(Gs, degree=2):	
+	colors = list(cnames.values())
 
+	for G in Gs:
+		color = random.choice(colors)
+		qreds = divisors.full_classes(G, degree)
+		todisp = [qred for qred in qreds if divisors.span(qreds[qred]) == len(G)] 
+		
+		if len(todisp) == 0:
+			continue
+		
+		N,M = get_dims(len(todisp))
+		
+		fig, ax = plt.subplots(M,N)
+		ax = np.array(ax).flatten()
+		print(ax)
+		for i, qred in enumerate(todisp):
+			print(i, qred)
+			divisor_view(G, qred, ax=ax[i], c=color)
 	
 def paintAll(ingraphs, spacing=1.4, painter=paint_multi):
 	fig = plt.figure()
