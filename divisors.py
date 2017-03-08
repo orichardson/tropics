@@ -13,33 +13,8 @@ There are three formats for a divisor:
 import itertools
 import formal
 import numpy as np
+from interactive import contextual
 
-from functools import wraps, partial
-from inspect import signature
-
-class Context(dict):		
-	def __getattr__(self, name):
-		return self.get(name, None)	
-			
-	def __setattr__(self, name, value):
-		self[name] = value
-	
-#if type(locals().get('CXT', None)).__name__ is not Context.__name__:
-if __name__ is not '__main__':
-	CXT = Context()
-
-def contextual(func):
-	@wraps(func) # just want to keep doc 'n stuff the same.
-	def wrapper(*args, **kwargs):
-		p = list(signature(func).parameters.keys())[len(args):]
-		if '?!?' in args or kwargs.get('debug', False):
-			print('Function: ', func)
-			print('\tparams: ', p)
-			print('\tgiven: ', args, kwargs)
-			print('\textra:', {n:CXT[n] for n in p.keys() if n in CXT})
-		return partial(func, *args,**kwargs)(**{n:CXT[n] for n in p if n in CXT})
-
-	return wrapper
 	
 @contextual
 def gen_all(d, G):
