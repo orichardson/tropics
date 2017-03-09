@@ -18,12 +18,37 @@ from inspect import signature, Parameter
 from math import log
 from collections import defaultdict
 
-class Context(dict):		
+class Context(dict):	
+	def __init__(self):
+		self.vars = defaultdict(list)
+		
 	def __getattr__(self, name):
-		return self.get(name, None)
+		return self.__getitem__(name)		
 			
 	def __setattr__(self, name, value):
-		self[name] = value
+		self.vars[name].append(value)
+		
+	def __delitem__(self, key):
+		del self.vars[key]
+	
+	def __getitem__(self, key):
+		if key not in self.vars:
+			return None
+
+		hist = self.vars[key]
+		if len(hist == 0) : 
+			return None
+		
+		return hist[-1]
+	
+	def __setitem__(self, key, val):
+		self.vars[key] = val
+		
+	def hist(self, name):
+		return self.vars[name]
+	
+	def revert(self, name, index)
+
 	
 #if type(locals().get('CXT', None)).__name__ is not Context.__name__:
 #if __name__ is not '__main__':
