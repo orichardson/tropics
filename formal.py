@@ -8,6 +8,7 @@ Created on Wed Jan 25 15:30:54 2017
 import divisors
 import numpy as np
 import networkx as nx
+import warnings
 
 def delv(f, v, G) :
 	return sum( len(G[v][w])*(f[v]-f[w]) for w in G[v])
@@ -17,7 +18,14 @@ def lap(f, G) :
 def getQ(G):
 	""" THe above two methods are summarized with this one; 
 	returns diag(the degrees of G) - adjacency(G) """
-	return np.diag(divisors.vec(nx.degree(G)))-nx.adjacency_matrix(G).todense()
+	A = nx.adjacency_matrix(G)
+
+	with warnings.catch_warnings():
+		warnings.simplefilter("ignore")
+		A.setdiag(A.diagonal()*2)
+		mat = np.diag(divisors.vec(nx.degree(G), G=G)) - A.todense()
+
+	return mat
 
 
 def getL(Q):

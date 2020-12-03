@@ -14,15 +14,32 @@ import itertools
 import formal
 import numpy as np
 from interactive import contextual
+import operator
+import networkx as nx
+from collections import defaultdict
 
-	
+def fire(div, vs, G):
+	""" vs is a map from vertex -> ammount of firing """
+	for v, k in vs.items():
+		for _, u in G.edges(v):
+			div[u] += k
+			div[v] -= k
+
+# DO NOT LISTIFY THIS METHOD
+def enum_div(G):
+	deg = 0
+	while(True):
+		for d in gen_all(deg, G):
+			yield d
+		deg += 1
+
 @contextual
-def gen_all(d, G):
+def gen_all(degree, G):
 	"""
 	For a graph G with N nodes, and degree = d, return an n-vector with sum of
 	degree $d$. This is of cardinalty N choose d with replacement (but unordered).
 	"""
-	return map(vecN(len(G)), itertools.combinations_with_replacement(range(len(G)), d))
+	return map(lambda p: div(*p, G=G), itertools.combinations_with_replacement(G.nodes(), degree))
 
 @contextual
 def outdeg(A, v, G):
@@ -49,12 +66,12 @@ def is_q_reduced(D, G, q=0):
 		
 	return True
 	
-
+	
 @contextual
 def vec(*elems, size=None, G=None):
 	""" items can be an iterable or a dict.
-	The parameter 'G' should only be used through contextualization, and
-	it replaces 'size' with 'len(G)'.
+	Creates a G.nodes() - indexed list based on the elements.
+	Use Divisor instead for most purposes.
 	 """
 	if len(elems) == 1 and hasattr(elems[0], '__iter__'):
 		elems = elems[0]
@@ -62,20 +79,19 @@ def vec(*elems, size=None, G=None):
 		size = max(elems) +1 if G is None else len(G)
 		
 	vec = [0]*size
+	
+	index = G.nodes().index if G is not None else lambda x: x
+		
 
 	if type(elems) is dict:
 		for (v, count) in elems.items():
-			vec[v] += count
+			vec[index(v)] += count
 	else:
 		for v in elems:
-			vec[v] += 1
+			vec[index(v)] += 1
 	
 	return vec
 	
-def vecN(size):
-	def v(*elems):
-		return vec(*elems, size=size)
-	return v
 	
 def _npa(matrix):
 	return np.asarray(matrix).flatten()
@@ -83,19 +99,18 @@ def _npa(matrix):
 
 @contextual
 def to_q_reduced(D, G, q=0):
+	
 	# Step 1
 	Q = formal.getQ(G)
 	L = formal.getL(Q)
-	N = len(G)
-	tov = vecN(N)
 	
-	Dr = np.array(D) - _npa(Q * np.floor(L.dot(D)).T)
+	Dr = D - _npa(Q * np.floor(L.dot(D)).T)
 
 	# Step 2
 	while True:
 		for v in G:
 			if (v != q) and (Dr[v] < 0):
-				Dr += _npa(Q.dot(tov(v)))
+				Dr += _npa(Q.dot(vec(v, G=G)))
 
 				break
 		else:
@@ -105,32 +120,39 @@ def to_q_reduced(D, G, q=0):
 	Ai = set(G.nodes()) - {q}
 	i = 1
 	
-	while i <= N-1:
+	while i <= len(G)-1:
 		for v in Ai:
 			if Dr[v] < outdeg(Ai,v,G):
 				i += 1
 				Ai.remove(v)
 				break;
 		else:
-			Dr -= _npa(Q.dot(tov(Ai)))
+			Dr -= _npa(Q.dot(vec(Ai, G=G)))
 			i = 1
 			Ai = set(G.nodes()) - {q}
-	
-	return list(map(int, Dr))
+			
+	return Dr.each(int)
 	
 @contextual		
 def enum_qred(degree, G, q=0):
-	return filter(is_q_reduced(G,q), gen_all(degree))
+	return filter(is_q_reduced.expect_D(G, q), gen_all.original(degree, G))
 
 @contextual
 def full_classes(G, degree, q=0, keep_trivial=True):
 	""" Returns a dict of equivalence classes for divisors on G, where the keys
 	are the reduced divisors, and  the values are the divisors themselves."""
+	qred = {} # map from q-reduced tuple to all divisors equivalent	
+
+	if degree is None or degree < 0:
+		for deg in range(0, len(G)):
+			qred.update(full_classes(G,deg,q,keep_trivial))
+		return qred
+
 	divisors = gen_all(degree, G)
-	qred = {} # map from q-reduced tuple to all divisors equivalent
 	
 	for d in divisors:
-		qr = tuple(to_q_reduced(d, G))
+		red = to_q_reduced(d, G)
+		qr = tuple(red)
 		
 		if not keep_trivial and qr == tuple(d):
 			continue
@@ -140,12 +162,15 @@ def full_classes(G, degree, q=0, keep_trivial=True):
 		elif keep_trivial:
 			qred[qr] = [d]
 		else:
-			qred[qr] = [list(qr), d]
+			qred[qr] = [red, d]
 	
 	return qred
 	
+def cover(divs):
+	return sum(divs).each(lambda v: v > 0)
+	
 def span(divs) :
-	return sum(x > 0 for x in np.array(divs).sum(axis=0))
+	return sum(cover(divs))
 
 def hist(classes, fun=span):
 	hist = {}
@@ -175,9 +200,10 @@ def E(edat):
 	a, b = edat[:2]
 	return ((a,b) if a < b else (b,a)) + edat[2:]
 	
-@contextual					
 def edges(G, *args, **kwargs):
-	return list(map(E, G.edges(*args, keys=True,**kwargs)))
+	if isinstance(G, nx.MultiGraph):
+		kwargs['keys'] = True
+	return list(map(E, G.edges(*args, **kwargs)))
 
 @contextual					
 def div2tree(G, D, q=0):
@@ -214,3 +240,144 @@ def tree2div(T, G, q=0):
 		NR.remove(f)	
 	
 	return D
+
+	
+	
+def has_gonality(G, gonality):
+	return len(G) is gonality or any(h == len(G) for h in hist(full_classes(G,gonality,keep_trivial=False)))
+	
+def gonality(G):
+	## equal to the max cut???
+	## TODO: find efficient way to do this.
+	for g in range(1, len(G)):
+		if has_gonality(G, g):
+			return g
+
+def is_hyperelliptic(G): return not has_gonality(G,1) and has_gonality(G,2)
+def is_trigonal(G): return not has_gonality(G,2) and has_gonality(G,3)
+	
+def spanning_div(G, keep_trivial=False):
+	for g in range(len(G)):
+		for d in spanning_divs(G, g, keep_trivial):
+			return d
+
+def spanning_divs(G, gonality, keep_trivial=False, save_class=False): 
+	return (((Divisor(d, G), divs) if save_class else Divisor(d, G)) \
+		for d, divs in full_classes(G, gonality, keep_trivial=keep_trivial).items() \
+			if span(divs) == len(G) )	
+
+@contextual
+def all_hyper(Gs):
+	return filter(is_hyperelliptic, Gs)
+	
+@contextual
+def all_trig(Gs):
+	return filter(is_trigonal, Gs)
+
+
+@contextual
+def div(*things, G):
+	div = Divisor.zeros(G)
+	
+	if len(things) == 1 and hasattr(things[0], '__iter__'):
+		things = things[0]
+		
+	if isinstance(things, dict):
+		return div + things
+	
+	for v in things:
+		div[v] += 1
+	return div
+
+@contextual	
+def maptotree(G, fold):
+	div, klass = next(spanning_divs(G, fold, False, True))
+	
+	the_map = defaultdict(list)
+	the_tree = nx.MultiGraph()
+	
+	for v in G:
+		for i,d in enumerate(klass):
+			if klass[v] > 0:
+				the_map[v].append(i)
+				
+	assert all(len(i) ==1 for i in the_map.values())
+		
+	
+	return the_map, the_tree	
+	
+
+	
+	
+	
+class Divisor(object):
+	def __init__(self, things, G):
+		self.G = G
+		if isinstance(things, dict):
+			self.data = {n:(things[n] if n in things else 0) for n in G.nodes()}
+		elif hasattr(things, '__iter__'):
+			self.data = {n:val for n,val in zip(G.nodes(),things)}
+
+	@classmethod
+	def zeros(cls, G):
+		return Divisor({n:0 for n in G.nodes()}, G)
+	
+	def as_(self, cls):
+		return cls(self.data[n] for n in self.G.nodes())
+		
+	def __getitem__(self, name):
+		return self.data[name]
+		
+	def __setitem__(self, name, val):
+		assert name in self.G, "you can only set a divisor at node values (%s not in %s)"%(name, self.G.nodes())
+		
+		self.data[name] = val
+		
+	def copy(self):
+		return Divisor(self.data.copy(), self.G)
+		
+	def each(self, fun, send_n=False):
+		for n in self.data:
+			self.data[n] = fun(self.data[n], n) if send_n else fun(self.data[n])
+		return self
+		
+	def __agg__(self, other, op):
+		if isinstance(other, Divisor):
+			assert other.G == self.G, "Underlying Graphs need to be the same to combine divisors."
+
+			return self.copy().each(lambda v, n: op(v, other[n]), send_n = True)
+			
+		elif hasattr(other, '__iter__'):
+			return self.__agg__(Divisor(other, self.G), op)
+			
+		else: #try to add other to items individually
+			try:
+				return self.copy().each(lambda v: op(v, other))
+			except Exception as e:
+				print(e)
+				raise ValueError('%s (of type %s) cannot be combined with a divisor via %s'%(other, type(other), op))
+
+
+	def __add__(self, other): return self.__agg__(other, operator.add)
+	def __radd__(self, other): return self.__add__(other)
+	def __sub__(self, other): return self.__agg__(other, operator.sub)
+	def __mul__(self, other): return self.copy().each(lambda v: v * other)
+	def __rmul__(self, other): return self.__mul__(other)
+
+
+	def __iter__(self):
+		for n, v in self.data.items():
+			yield  v
+			
+	def __len__(self):
+		return len(self.G)
+
+	def __reversed__(self):
+		for n, v in reversed(self.data.items()):
+			yield  v
+
+#	def __rsub__(self, other): return self.__sub__(other)		
+	
+	
+	def __repr__(self):
+		return ' + '.join('%s[v%s]'%(v,n) for n,v in self.data.items())
